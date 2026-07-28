@@ -1,29 +1,18 @@
 pipeline {
     agent { label 'slave' }
 
-    parameters {
-        string(
-            name: 'VERSION',
-            defaultValue: '1.0.0',
-            description: 'Release version'
-        )
-    }
-
     environment {
         AWS_DEFAULT_REGION = 'ap-south-1'
-        ECR_REPOSITORY = "${ECR_REPOSITORY_URL}"
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        ECR_REPOSITORY = credentials('ecr-repository-url')
+        CLUSTER_NAME = 'flowharbor-cluster'
     }
 
     stages {
         stage('Build') {
             steps {
                 script {
-                    docker.build(
-                        "${ECR_REPOSITORY}:${IMAGE_TAG}",
-                        "--build-arg BUILD_NUMBER=${BUILD_NUMBER} -f app/Dockerfile app/"
-                    )
-                    sh "docker tag ${ECR_REPOSITORY}:${IMAGE_TAG} ${ECR_REPOSITORY}:latest"
+                    sh "docker build --build-arg BUILD_NUMBER=${BUILD_NUMBER} -t ${ECR_REPOSITORY}:${BUILD_NUMBER} -f app/Dockerfile app/"
+                    sh "docker tag ${ECR_REPOSITORY}:${BUILD_NUMBER} ${ECR_REPOSITORY}:latest"
                 }
             }
         }
@@ -31,11 +20,11 @@ pipeline {
         stage('Push to ECR') {
             steps {
                 script {
-                    sh '''
+                    sh """
                         aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | \
                         docker login --username AWS --password-stdin ${ECR_REPOSITORY}
-                    '''
-                    sh "docker push ${ECR_REPOSITORY}:${IMAGE_TAG}"
+                    """
+                    sh "docker push ${ECR_REPOSITORY}:${BUILD_NUMBER}"
                     sh "docker push ${ECR_REPOSITORY}:latest"
                 }
             }
@@ -44,17 +33,23 @@ pipeline {
         stage('Deploy to Dev') {
             steps {
                 script {
-                    def td = registerTaskDefinition('dev')
-                    deployService('dev', td)
+                    promote('dev')
                 }
+            }
+        }
+
+        stage('Approve Staging') {
+            input {
+                message "Promote build #${BUILD_NUMBER} to staging?"
+                ok "Promote to Staging"
+                submitter 'admin'
             }
         }
 
         stage('Promote to Staging') {
             steps {
                 script {
-                    def td = registerTaskDefinition('staging')
-                    deployService('staging', td)
+                    promote('staging')
                 }
             }
         }
@@ -62,16 +57,15 @@ pipeline {
         stage('Approve Production') {
             input {
                 message "Promote build #${BUILD_NUMBER} to production?"
-                ok "Approve"
-                submitter "admin"
+                ok "Promote to Production"
+                submitter 'admin'
             }
         }
 
         stage('Promote to Production') {
             steps {
                 script {
-                    def td = registerTaskDefinition('prod')
-                    deployService('prod', td)
+                    promote('prod')
                 }
             }
         }
@@ -80,77 +74,80 @@ pipeline {
     post {
         success {
             echo """
-            ┌──────────────────────────────────────┐
-            │  Promotion Complete!                  │
-            │                                      │
-            │  Build: #${BUILD_NUMBER}              │
-            │  Version: ${params.VERSION}           │
-            │  Image: ${ECR_REPOSITORY}:${IMAGE_TAG}│
-            │                                      │
-            │  Dev:     https://testing.flowharbor.in│
-            │  Staging: https://staging.flowharbor.in│
-            │  Prod:    https://flowharbor.in       │
-            └──────────────────────────────────────┘
+            ┌────────────────────────────────────────────┐
+            │  Promotion Complete                        │
+            │                                            │
+            │  Build:  #${BUILD_NUMBER}                   │
+            │  Image:  ${ECR_REPOSITORY}:${BUILD_NUMBER}  │
+            │                                            │
+            │  Dev:     https://testing.flowharbor.in    │
+            │  Staging: https://staging.flowharbor.in    │
+            │  Prod:    https://flowharbor.in            │
+            └────────────────────────────────────────────┘
             """
         }
         failure {
-            echo "Promotion failed at ${env.STAGE_NAME}"
+            error "Promotion failed at stage: ${env.STAGE_NAME}"
         }
     }
 }
 
-def registerTaskDefinition(envName) {
+def promote(envName) {
     def family = "flowharbor-${envName}"
-    def cluster = "flowharbor-cluster"
+    def serviceName = "flowharbor-${envName}"
 
     def currentTd = sh(
         script: "aws ecs describe-task-definition --task-definition ${family}",
         returnStdout: true
     ).trim()
 
-    def definition = readJSON text: currentTd
-    def containerDefs = definition.taskDefinition.containerDefinitions
+    def td = readJSON text: currentTd
+    def containerDef = td.taskDefinition.containerDefinitions[0]
 
-    containerDefs[0].image = "${ECR_REPOSITORY}:latest"
-    containerDefs[0].environment = [
-        [name: "ENV", value: envName],
-        [name: "VERSION", value: params.VERSION],
-        [name: "BUILD_NUMBER", value: "${BUILD_NUMBER}"]
+    def newContainerDef = [
+        name: containerDef.name,
+        image: "${ECR_REPOSITORY}:latest",
+        essential: containerDef.essential,
+        portMappings: containerDef.portMappings,
+        logConfiguration: containerDef.logConfiguration,
+        environment: [
+            [name: "ENV", value: envName],
+            [name: "VERSION", value: params.VERSION ?: "1.0.0"],
+            [name: "BUILD_NUMBER", value: "${BUILD_NUMBER}"]
+        ]
     ]
 
+    def payload = [
+        family: family,
+        taskRoleArn: td.taskDefinition.taskRoleArn,
+        executionRoleArn: td.taskDefinition.executionRoleArn,
+        networkMode: td.taskDefinition.networkMode,
+        requiresCompatibilities: td.taskDefinition.requiresCompatibilities,
+        cpu: td.taskDefinition.cpu,
+        memory: td.taskDefinition.memory,
+        containerDefinitions: [newContainerDef]
+    ]
+
+    writeJSON file: 'td.json', json: payload
+
     def newTd = sh(
-        script: """
-            aws ecs register-task-definition \
-                --family ${family} \
-                --task-role-arn ${definition.taskDefinition.taskRoleArn} \
-                --execution-role-arn ${definition.taskDefinition.executionRoleArn} \
-                --network-mode ${definition.taskDefinition.networkMode} \
-                --requires-compatibilities ${definition.taskDefinition.requiresCompatibilities.join(' ')} \
-                --cpu ${definition.taskDefinition.cpu} \
-                --memory ${definition.taskDefinition.memory} \
-                --container-definitions '${containerDefs}'
-        """,
+        script: "aws ecs register-task-definition --cli-input-json file://td.json",
         returnStdout: true
     ).trim()
 
-    return readJSON(text: newTd).taskDefinition.taskDefinitionArn
-}
-
-def deployService(envName, taskDefinitionArn) {
-    def cluster = "flowharbor-cluster"
-    def serviceName = "flowharbor-${envName}"
+    def tdArn = readJSON(text: newTd).taskDefinition.taskDefinitionArn
 
     sh """
         aws ecs update-service \
-            --cluster ${cluster} \
+            --cluster ${CLUSTER_NAME} \
             --service ${serviceName} \
-            --task-definition ${taskDefinitionArn} \
+            --task-definition ${tdArn} \
             --force-new-deployment
     """
 
     sh """
         aws ecs wait services-stable \
-            --cluster ${cluster} \
+            --cluster ${CLUSTER_NAME} \
             --services ${serviceName}
     """
 }

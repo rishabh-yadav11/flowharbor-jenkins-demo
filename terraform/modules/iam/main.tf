@@ -48,6 +48,57 @@ resource "aws_iam_role_policy" "jenkins_ec2_ssm_param" {
   })
 }
 
+resource "aws_iam_role_policy" "jenkins_ec2_ecs" {
+  name = "${var.project_name}-ecs-deploy"
+  role = aws_iam_role.jenkins_ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecs:RegisterTaskDefinition",
+          "ecs:DescribeTaskDefinition",
+          "ecs:UpdateService",
+          "ecs:DescribeServices",
+          "ecs:ListServices",
+          "ecs:DescribeClusters"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "iam:PassRole"
+        ]
+        Resource = [
+          aws_iam_role.ecs_execution.arn,
+          aws_iam_role.ecs_task.arn
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "jenkins_ec2_ec2_describe" {
+  name = "${var.project_name}-ec2-describe"
+  role = aws_iam_role.jenkins_ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "jenkins" {
   name = "${var.project_name}-jenkins-instance-profile"
   role = aws_iam_role.jenkins_ec2.name

@@ -60,7 +60,8 @@ def plugins = [
     "cloudbees-folder",
     "blueocean",
     "credentials-binding",
-    "configuration-as-code"
+    "configuration-as-code",
+    "pipeline-input-step"
 ]
 
 plugins.each { plugin ->
@@ -132,40 +133,49 @@ if [ -n "$API_TOKEN" ]; then
     curl -s -u "admin:$${API_TOKEN}" -X POST "http://localhost:8080/createItem?name=flowharbor-pipeline" \
         --header "Content-Type: application/xml" \
         --data "<flow-definition plugin=\"workflow-job@2.40\">\
-          <description>FlowHarbor CI/CD Pipeline</description>\
+          <description>FlowHarbor CI/CD Pipeline — build once, promote through dev/staging/prod</description>\
           <keepDependencies>false</keepDependencies>\
           <properties>\
             <parameters>\
-              <hudson.model.ChoiceParameterDefinition>\
-                <name>ENV</name>\
-                <choices class=\"java.util.Arrays\">\
-                  <a class=\"string-array\">\
-                    <string>dev</string>\
-                    <string>staging</string>\
-                    <string>prod</string>\
-                  </a>\
-                </choices>\
-              </hudson.model.ChoiceParameterDefinition>\
+              <hudson.model.StringParameterDefinition>\
+                <name>VERSION</name>\
+                <defaultValue>1.0.0</defaultValue>\
+                <description>Release version label</description>\
+              </hudson.model.StringParameterDefinition>\
             </parameters>\
+            <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>\
+              <triggers>\
+                <hudson.triggers.SCMTrigger>\
+                  <spec>H/5 * * * *</spec>\
+                  <ignorePostCommitHooks>false</ignorePostCommitHooks>\
+                </hudson.triggers.SCMTrigger>\
+              </triggers>\
+            </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>\
           </properties>\
           <definition class=\"org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition\">\
             <scm class=\"hudson.plugins.git.GitSCM\">\
               <userRemoteConfigs>\
                 <hudson.plugins.git.UserRemoteConfig>\
-                  <url>https://github.com/placeholder/flowharbor-app.git</url>\
+                  <url>https://github.com/rishabh-yadav11/flowharbor-jenkins-demo.git</url>\
                 </hudson.plugins.git.UserRemoteConfig>\
               </userRemoteConfigs>\
               <branches>\
                 <hudson.plugins.git.BranchSpec>\
-                  <name>*/main</name>\
+                  <name>*/dev</name>\
                 </hudson.plugins.git.BranchSpec>\
               </branches>\
             </scm>\
             <scriptPath>Jenkinsfile</scriptPath>\
             <lightweight>true</lightweight>\
           </definition>\
-          <triggers/>\
           <disabled>false</disabled>\
         </flow-definition>" \
+        2>/dev/null || true
+
+    sleep 5
+
+    curl -s -u "admin:$${API_TOKEN}" -X POST "http://localhost:8080/credentials/store/system/domain/_/createCredentials" \
+        --header "Content-Type: application/x-www-form-urlencoded" \
+        --data "json={\"\":\"3\",\"credentials\":{\"scope\":\"GLOBAL\",\"id\":\"ecr-repository-url\",\"secret\":\"${ecr_repository_url}\",\"description\":\"ECR Repository URL\",\"stapler-class\":\"org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl\"}}" \
         2>/dev/null || true
 fi
