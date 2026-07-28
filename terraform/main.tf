@@ -109,14 +109,12 @@ module "cloudfront" {
 }
 
 module "route53" {
-  source                      = "./modules/route53"
-  domain_name                 = var.domain_name
-  hosted_zone_id              = var.hosted_zone_id
-  alb_dns_name                = module.alb.dns_name
-  alb_zone_id                 = module.alb.zone_id
-  cloudfront_domain_name      = module.cloudfront.domain_name
-  cloudfront_zone_id          = module.cloudfront.hosted_zone_id
-  acm_alb_validation_records  = module.acm.alb_validation_records
-  acm_cf_validation_records   = module.acm.cloudfront_validation_records
-  depends_on                  = [module.alb, module.cloudfront, module.acm]
+  source                 = "./modules/route53"
+  domain_name            = var.domain_name
+  hosted_zone_id         = var.hosted_zone_id
+  alb_dns_name           = module.alb.dns_name
+  alb_zone_id            = module.alb.zone_id
+  cloudfront_domain_name = module.cloudfront.domain_name
+  cloudfront_zone_id     = module.cloudfront.hosted_zone_id
+  depends_on             = [module.alb, module.cloudfront, module.acm]
 }

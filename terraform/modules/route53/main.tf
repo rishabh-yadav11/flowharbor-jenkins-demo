@@ -46,36 +46,4 @@ resource "aws_route53_record" "root" {
   }
 }
 
-resource "aws_route53_record" "acm_alb_validation" {
-  for_each = {
-    for dvo in var.acm_alb_validation_records : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  }
 
-  zone_id         = var.hosted_zone_id
-  name            = each.value.name
-  type            = each.value.type
-  records         = [each.value.record]
-  ttl             = 60
-  allow_overwrite = true
-}
-
-resource "aws_route53_record" "acm_cf_validation" {
-  for_each = {
-    for dvo in var.acm_cf_validation_records : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  }
-
-  zone_id         = var.hosted_zone_id
-  name            = each.value.name
-  type            = each.value.type
-  records         = [each.value.record]
-  ttl             = 60
-  allow_overwrite = true
-}

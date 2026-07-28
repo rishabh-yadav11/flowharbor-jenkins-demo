@@ -27,13 +27,3 @@ variable "cloudfront_zone_id" {
   description = "CloudFront hosted zone ID"
   type        = string
 }
-
-variable "acm_alb_validation_records" {
-  description = "ACM ALB certificate validation records"
-  type        = list(any)
-}
-
-variable "acm_cf_validation_records" {
-  description = "ACM CloudFront certificate validation records"
-  type        = list(any)
-}
