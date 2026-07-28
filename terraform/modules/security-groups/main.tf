@@ -35,6 +35,13 @@ resource "aws_security_group" "jenkins_master" {
   }
 
   ingress {
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.jenkins_slave.id]
+  }
+
+  ingress {
     from_port       = 50000
     to_port         = 50000
     protocol        = "tcp"
