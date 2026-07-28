@@ -29,7 +29,7 @@ pipeline {
                     sh "docker tag ${ECR_REPOSITORY}:${BUILD_NUMBER} ${ECR_REPOSITORY}:latest"
 
                     def imageInspect = sh(
-                        script: "docker inspect ${ECR_REPOSITORY}:${BUILD_NUMBER} --format '{{.CreatedSince}}'",
+                        script: "docker images ${ECR_REPOSITORY}:${BUILD_NUMBER} --format '{{.CreatedSince}}'",
                         returnStdout: true
                     ).trim()
                     echo "  Built:   ${imageInspect}"
