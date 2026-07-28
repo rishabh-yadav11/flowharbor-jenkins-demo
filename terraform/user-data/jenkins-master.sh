@@ -74,7 +74,8 @@ uc.updateAllSites()
 def plugins = [
     "workflow-aggregator", "git", "pipeline-aws", "docker-workflow",
     "cloudbees-folder", "blueocean", "credentials-binding",
-    "configuration-as-code", "pipeline-input-step", "github"
+    "configuration-as-code", "pipeline-input-step", "github",
+    "pipeline-utility-steps"
 ]
 plugins.each { plugin ->
     if (!pm.getPlugin(plugin)) {
