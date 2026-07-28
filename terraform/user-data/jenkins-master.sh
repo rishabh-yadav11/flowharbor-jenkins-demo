@@ -138,4 +138,18 @@ aws ssm put-parameter \
     --overwrite \
     --region "$REGION"
 
+# Create pipeline job via Groovy
+curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
+  -H "Jenkins-Crumb: $CRUMB" \
+  -X POST 'http://localhost:8080/scriptText' \
+  --data-urlencode 'script=import jenkins.model.*;import org.jenkinsci.plugins.workflow.job.WorkflowJob;import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition;import hudson.plugins.git.GitSCM;import hudson.plugins.git.BranchSpec;import hudson.plugins.git.UserRemoteConfig;import com.cloudbees.jenkins.GitHubPushTrigger;def i=Jenkins.getInstance();def jn="flowharbor-pipeline";def ex=i.getItem(jn);if(ex){ex.delete()};def j=new WorkflowJob(i,jn);j.addTrigger(new GitHubPushTrigger());def scm=new GitSCM([new UserRemoteConfig("https://github.com/rishabh-yadav11/flowharbor-jenkins-demo.git",null,null,null)],[new BranchSpec("*/dev")],false,[],null,null,[]);j.setDefinition(new CpsScmFlowDefinition(scm,"Jenkinsfile"));i.add(j,jn);j.save();i.save();println("PIPELINE_CREATED")' \
+  --max-time 10
+
+# Store ECR URL as credential
+curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
+  -H "Jenkins-Crumb: $CRUMB" \
+  -X POST 'http://localhost:8080/scriptText' \
+  --data-urlencode 'script=import jenkins.model.*;import com.cloudbees.plugins.credentials.*;import com.cloudbees.plugins.credentials.domains.*;import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;import hudson.util.Secret;def i=Jenkins.getInstance();def s=Domain.global();def p=CredentialsProvider.lookupStores(i).iterator().next();def id="ecr-repository-url";def ex=CredentialsProvider.lookupCredentials(StringCredentialsImpl.class,i).find({it.id==id});if(ex){p.removeCredentials(s,ex)};def c=new StringCredentialsImpl(CredentialsScope.GLOBAL,id,"ECR Repository URL",Secret.fromString("${ecr_repository_url}"));p.addCredentials(s,c);i.save();println("ECR_CRED_ADDED")' \
+  --max-time 10
+
 echo "MASTER_SETUP_COMPLETE"
