@@ -3,6 +3,11 @@ set -e
 
 export DEBIAN_FRONTEND=noninteractive
 
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+imds() { curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" "http://169.254.169.254/latest/$1"; }
+REGION=$(imds "meta-data/placement/region")
+LOCAL_IP=$(imds "meta-data/local-ipv4")
+
 apt-get update -y
 apt-get install -y openjdk-21-jdk-headless docker.io curl jq python3-pip
 
@@ -86,8 +91,6 @@ systemctl daemon-reload
 systemctl enable jenkins
 systemctl start jenkins
 
-REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
-
 aws ssm put-parameter \
     --name "/${project_name}/jenkins-admin-password" \
     --value "$ADMIN_PASS" \
@@ -97,14 +100,13 @@ aws ssm put-parameter \
 
 aws ssm put-parameter \
     --name "/${project_name}/jenkins-master-url" \
-    --value "http://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8080" \
+    --value "http://$LOCAL_IP:8080" \
     --type String \
     --overwrite \
     --region "$REGION"
 
 sleep 60
 
-# Set TCP port and create slave node via Groovy
 CJAR=/tmp/jc.txt
 rm -f "$CJAR"
 CRUMB=$(curl -s -c "$CJAR" -b "$CJAR" -u "admin:$ADMIN_PASS" \
@@ -117,14 +119,12 @@ curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
   --data-urlencode 'script=import jenkins.model.*;def i=Jenkins.getInstance();i.setSlaveAgentPort(50000);i.save()' \
   --max-time 10
 
-# Create slave node
 curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
   -H "Jenkins-Crumb: $CRUMB" \
   -X POST 'http://localhost:8080/scriptText' \
   --data-urlencode 'script=import jenkins.model.*;import hudson.slaves.*;def i=Jenkins.getInstance();def n=i.getNode("jenkins-slave");if(n){i.removeNode(n)};def s=new DumbSlave("jenkins-slave","/var/jenkins",null);s.setNumExecutors(2);s.setLabelString("docker linux");s.setMode(hudson.model.Node.Mode.NORMAL);s.setRetentionStrategy(new RetentionStrategy.Always());s.setLauncher(new JNLPLauncher());i.addNode(s);i.save()' \
   --max-time 10
 
-# Get agent secret and store in SSM
 AGENT_SECRET=$(curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
   -H "Jenkins-Crumb: $CRUMB" \
   -X POST 'http://localhost:8080/scriptText' \

@@ -3,6 +3,10 @@ set -e
 
 export DEBIAN_FRONTEND=noninteractive
 
+IMDS_TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+imds() { curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" "http://169.254.169.254/latest/$1"; }
+REGION=$(imds "meta-data/placement/region")
+
 apt-get update -y
 apt-get install -y openjdk-21-jdk-headless docker.io curl jq python3-pip
 
@@ -14,8 +18,6 @@ pip3 install awscli --break-system-packages
 
 mkdir -p /home/ubuntu/jenkins-agent /var/jenkins
 chown -R ubuntu:ubuntu /home/ubuntu/jenkins-agent /var/jenkins
-
-REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 
 for i in $(seq 1 30); do
     MASTER_URL=$(aws ssm get-parameter \
