@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'slave' }
+    agent { label 'jenkins-slave' }
 
     environment {
         AWS_DEFAULT_REGION = 'ap-south-1'
@@ -68,10 +68,10 @@ pipeline {
         }
 
         stage('Approve Staging') {
-            input {
-                message "Promote build #${BUILD_NUMBER} (${GIT_COMMIT_SHORT}) to staging?"
-                ok "Promote to Staging"
-                submitter 'admin'
+            steps {
+                input message: "Promote build #${BUILD_NUMBER} (${GIT_COMMIT_SHORT}) to staging?",
+                      ok: "Promote to Staging",
+                      submitter: 'admin'
             }
         }
 
@@ -82,10 +82,10 @@ pipeline {
         }
 
         stage('Approve Production') {
-            input {
-                message "Promote build #${BUILD_NUMBER} (${GIT_COMMIT_SHORT}) to production?"
-                ok "Promote to Production"
-                submitter 'admin'
+            steps {
+                input message: "Promote build #${BUILD_NUMBER} (${GIT_COMMIT_SHORT}) to production?",
+                      ok: "Promote to Production",
+                      submitter: 'admin'
             }
         }
 
@@ -129,7 +129,9 @@ pipeline {
         }
         failure {
             echo "Pipeline failed at stage: ${env.STAGE_NAME}"
-            currentBuild.result = 'FAILURE'
+            script {
+                currentBuild.result = 'FAILURE'
+            }
         }
     }
 }
