@@ -99,10 +99,7 @@ aws ssm put-parameter \
     --region "$REGION"
 
 aws ssm put-parameter \
-    --name "/${project_name}/jenkins-master-url" \
-    --value "http://$LOCAL_IP:8080" \
-    --type String \
-    --overwrite \
+    --cli-input-json "{\"Name\":\"/${project_name}/jenkins-master-url\",\"Value\":\"http://$LOCAL_IP:8080\",\"Type\":\"String\",\"Overwrite\":true}" \
     --region "$REGION"
 
 sleep 60
