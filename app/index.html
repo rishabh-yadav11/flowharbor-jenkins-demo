@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FlowHarbor - __ENV__</title>
+  <style>
+    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #e0e0e0; }
+    .card { text-align: center; padding: 3rem; border-radius: 12px; background: #16213e; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+    h1 { color: #4cc9f0; margin-bottom: 0.5rem; }
+    .env { font-size: 1.2rem; font-weight: bold; margin-bottom: 0.5rem; }
+    .version { color: #9e9e9e; font-size: 0.9rem; }
+    .build { color: #9e9e9e; font-size: 0.8rem; margin-top: 1rem; }
+    .env-dev { color: #f72585; }
+    .env-staging { color: #ff9e00; }
+    .env-prod { color: #06d6a0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>FlowHarbor</h1>
+    <div class="env env-__ENV__">__ENV_LABEL__ Environment</div>
+    <div class="version">v__VERSION__</div>
+    <div class="build">Build #__BUILD_NUMBER__</div>
+  </div>
+</body>
+</html>
