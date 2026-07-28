@@ -52,7 +52,12 @@ resource "aws_ecs_task_definition" "dev" {
       environment = [
         { name = "ENV", value = "dev" },
         { name = "VERSION", value = "1.0.0" },
-        { name = "BUILD_NUMBER", value = "0" }
+        { name = "BUILD_NUMBER", value = "0" },
+        { name = "GIT_COMMIT", value = "none" },
+        { name = "GIT_BRANCH", value = "none" },
+        { name = "GIT_AUTHOR", value = "none" },
+        { name = "TIMESTAMP", value = "none" },
+        { name = "PIPELINE_URL", value = "none" }
       ]
     })
   ])
@@ -82,7 +87,12 @@ resource "aws_ecs_task_definition" "staging" {
       environment = [
         { name = "ENV", value = "staging" },
         { name = "VERSION", value = "1.0.0" },
-        { name = "BUILD_NUMBER", value = "0" }
+        { name = "BUILD_NUMBER", value = "0" },
+        { name = "GIT_COMMIT", value = "none" },
+        { name = "GIT_BRANCH", value = "none" },
+        { name = "GIT_AUTHOR", value = "none" },
+        { name = "TIMESTAMP", value = "none" },
+        { name = "PIPELINE_URL", value = "none" }
       ]
     })
   ])
@@ -112,7 +122,12 @@ resource "aws_ecs_task_definition" "prod" {
       environment = [
         { name = "ENV", value = "prod" },
         { name = "VERSION", value = "1.0.0" },
-        { name = "BUILD_NUMBER", value = "0" }
+        { name = "BUILD_NUMBER", value = "0" },
+        { name = "GIT_COMMIT", value = "none" },
+        { name = "GIT_BRANCH", value = "none" },
+        { name = "GIT_AUTHOR", value = "none" },
+        { name = "TIMESTAMP", value = "none" },
+        { name = "PIPELINE_URL", value = "none" }
       ]
     })
   ])
