@@ -4,20 +4,41 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -y
-apt-get install -y openjdk-17-jdk docker.io awscli curl jq
+apt-get install -y openjdk-21-jdk-headless docker.io curl jq python3-pip
 
 systemctl enable docker
 systemctl start docker
 usermod -aG docker ubuntu
 
-curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | tee /etc/apt/sources.list.d/jenkins.list > /dev/null
-apt-get update -y
-apt-get install -y jenkins
+pip3 install awscli --break-system-packages
 
-systemctl enable jenkins
+mkdir -p /usr/share/jenkins
+curl -fsSL https://get.jenkins.io/war-stable/2.452.3/jenkins.war -o /usr/share/jenkins/jenkins.war
 
-TOKEN=$(openssl rand -base64 16)
+id -u jenkins &>/dev/null || useradd -m -d /var/lib/jenkins -s /bin/bash jenkins
+mkdir -p /var/lib/jenkins /var/log/jenkins /var/cache/jenkins
+chown -R jenkins:jenkins /var/lib/jenkins /var/log/jenkins /var/cache/jenkins /usr/share/jenkins
+
+ADMIN_PASS=$(openssl rand -base64 16)
+
+cat > /etc/systemd/system/jenkins.service << UNIT
+[Unit]
+Description=Jenkins Continuous Integration Server
+After=network.target
+
+[Service]
+User=jenkins
+Group=jenkins
+WorkingDirectory=/var/lib/jenkins
+Environment=JENKINS_HOME=/var/lib/jenkins
+Environment=JENKINS_ADMIN_PASSWORD=$ADMIN_PASS
+ExecStart=/usr/bin/java -Djenkins.install.runSetupWizard=false -Xmx1024m -jar /usr/share/jenkins/jenkins.war --httpPort=8080
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
 
 mkdir -p /var/lib/jenkins/init.groovy.d
 
@@ -28,152 +49,93 @@ import jenkins.install.*
 
 def instance = Jenkins.getInstance()
 instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
-
 def env = System.getenv()
 def adminPassword = env['JENKINS_ADMIN_PASSWORD'] ?: 'admin'
-
 def hudsonRealm = new HudsonPrivateSecurityRealm(false)
 hudsonRealm.createAccount('admin', adminPassword)
 instance.setSecurityRealm(hudsonRealm)
-
 def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
 strategy.setAllowAnonymousRead(false)
 instance.setAuthorizationStrategy(strategy)
-
 instance.save()
 GROOVY_EOF
 
 cat > /var/lib/jenkins/init.groovy.d/02-plugins.groovy << 'GROOVY_EOF'
 import jenkins.model.*
-import java.util.logging.Logger
-
 def instance = Jenkins.getInstance()
 def pm = instance.getPluginManager()
 def uc = instance.getUpdateCenter()
 uc.updateAllSites()
-
 def plugins = [
-    "workflow-aggregator",
-    "git",
-    "pipeline-aws",
-    "docker-workflow",
-    "cloudbees-folder",
-    "blueocean",
-    "credentials-binding",
-    "configuration-as-code",
-    "pipeline-input-step",
-    "github"
+    "workflow-aggregator", "git", "pipeline-aws", "docker-workflow",
+    "cloudbees-folder", "blueocean", "credentials-binding",
+    "configuration-as-code", "pipeline-input-step", "github"
 ]
-
 plugins.each { plugin ->
     if (!pm.getPlugin(plugin)) {
         def deployment = uc.getPlugin(plugin).deploy()
         deployment.get()
     }
 }
-
 instance.save()
 GROOVY_EOF
 
 chown -R jenkins:jenkins /var/lib/jenkins
 
-mkdir -p /etc/systemd/system/jenkins.service.d/
-cat > /etc/systemd/system/jenkins.service.d/override.conf << OVERRIDE
-[Service]
-Environment="JENKINS_ADMIN_PASSWORD=$${TOKEN}"
-Environment="JAVA_OPTS=-Djenkins.install.runSetupWizard=false"
-OVERRIDE
-
 systemctl daemon-reload
+systemctl enable jenkins
 systemctl start jenkins
+
+REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 
 aws ssm put-parameter \
     --name "/${project_name}/jenkins-admin-password" \
-    --value "$${TOKEN}" \
-    --type "SecureString" \
+    --value "$ADMIN_PASS" \
+    --type SecureString \
     --overwrite \
-    --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+    --region "$REGION"
 
 aws ssm put-parameter \
     --name "/${project_name}/jenkins-master-url" \
     --value "http://$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4):8080" \
-    --type "String" \
+    --type String \
     --overwrite \
-    --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+    --region "$REGION"
 
 sleep 60
 
-API_TOKEN=$(curl -s -u "admin:$${TOKEN}" -X POST "http://localhost:8080/me/descriptorByName/jenkins.security.ApiTokenProperty/generateNewToken" \
-    --data "newTokenName=init-token" 2>/dev/null | jq -r '.data.tokenValue' || echo "")
+# Set TCP port and create slave node via Groovy
+CJAR=/tmp/jc.txt
+rm -f "$CJAR"
+CRUMB=$(curl -s -c "$CJAR" -b "$CJAR" -u "admin:$ADMIN_PASS" \
+  'http://localhost:8080/crumbIssuer/api/json' --max-time 10 | \
+  python3 -c "import sys,json;print(json.load(sys.stdin)['crumb'])")
 
-if [ -n "$API_TOKEN" ]; then
-    aws ssm put-parameter \
-        --name "/${project_name}/jenkins-api-token" \
-        --value "$${API_TOKEN}" \
-        --type "SecureString" \
-        --overwrite \
-        --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
+  -H "Jenkins-Crumb: $CRUMB" \
+  -X POST 'http://localhost:8080/scriptText' \
+  --data-urlencode 'script=import jenkins.model.*;def i=Jenkins.getInstance();i.setSlaveAgentPort(50000);i.save()' \
+  --max-time 10
 
-    INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-    REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+# Create slave node
+curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
+  -H "Jenkins-Crumb: $CRUMB" \
+  -X POST 'http://localhost:8080/scriptText' \
+  --data-urlencode 'script=import jenkins.model.*;import hudson.slaves.*;def i=Jenkins.getInstance();def n=i.getNode("jenkins-slave");if(n){i.removeNode(n)};def s=new DumbSlave("jenkins-slave","/var/jenkins",null);s.setNumExecutors(2);s.setLabelString("docker linux");s.setMode(hudson.model.Node.Mode.NORMAL);s.setRetentionStrategy(new RetentionStrategy.Always());s.setLauncher(new JNLPLauncher());i.addNode(s);i.save()' \
+  --max-time 10
 
-    SLAVE_IP=$(aws ec2 describe-instances \
-        --region "$REGION" \
-        --filters "Name=tag:Name,Values=${project_name}-jenkins-slave" "Name=instance-state-name,Values=running" \
-        --query "Reservations[0].Instances[0].PrivateIpAddress" \
-        --output text)
+# Get agent secret and store in SSM
+AGENT_SECRET=$(curl -s -u "admin:$ADMIN_PASS" -c "$CJAR" -b "$CJAR" \
+  -H "Jenkins-Crumb: $CRUMB" \
+  -X POST 'http://localhost:8080/scriptText' \
+  --data-urlencode 'script=import jenkins.model.*;for(c in Jenkins.getInstance().computers){if(c.name=="jenkins-slave"){print(c.getJnlpMac())}}' \
+  --max-time 10)
 
-    if [ -n "$SLAVE_IP" ] && [ "$SLAVE_IP" != "None" ]; then
-        curl -s -u "admin:$${API_TOKEN}" -X POST "http://localhost:8080/computer/doCreateItem" \
-            --data "name=slave" \
-            --data "type=hudson.slaves.DumbSlave" \
-            --data-urlencode "json={\"name\":\"slave\",\"type\":\"hudson.slaves.DumbSlave\",\"launcher\":{\"stapler-class\":\"hudson.slaves.JNLPLauncher\"},\"remoteFS\":\"/home/jenkins\",\"numExecutors\":2,\"retentionStrategy\":{\"stapler-class\":\"hudson.slaves.RetentionStrategy\$Always\"}}" \
-            2>/dev/null || true
-    fi
+aws ssm put-parameter \
+    --name "/${project_name}/jenkins-slave-secret" \
+    --value "$AGENT_SECRET" \
+    --type SecureString \
+    --overwrite \
+    --region "$REGION"
 
-    curl -s -u "admin:$${API_TOKEN}" -X POST "http://localhost:8080/createItem?name=flowharbor-pipeline" \
-        --header "Content-Type: application/xml" \
-        --data "<flow-definition plugin=\"workflow-job@2.40\">\
-          <description>FlowHarbor CI/CD Pipeline — build once, promote through dev/staging/prod</description>\
-          <keepDependencies>false</keepDependencies>\
-          <properties>\
-            <parameters>\
-              <hudson.model.StringParameterDefinition>\
-                <name>VERSION</name>\
-                <defaultValue>1.0.0</defaultValue>\
-                <description>Release version label</description>\
-              </hudson.model.StringParameterDefinition>\
-            </parameters>\
-            <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>\
-              <triggers>\
-                <com.cloudbees.jenkins.GitHubPushTrigger/>\
-              </triggers>\
-            </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>\
-          </properties>\
-          <definition class=\"org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition\">\
-            <scm class=\"hudson.plugins.git.GitSCM\">\
-              <userRemoteConfigs>\
-                <hudson.plugins.git.UserRemoteConfig>\
-                  <url>https://github.com/rishabh-yadav11/flowharbor-jenkins-demo.git</url>\
-                </hudson.plugins.git.UserRemoteConfig>\
-              </userRemoteConfigs>\
-              <branches>\
-                <hudson.plugins.git.BranchSpec>\
-                  <name>*/dev</name>\
-                </hudson.plugins.git.BranchSpec>\
-              </branches>\
-            </scm>\
-            <scriptPath>Jenkinsfile</scriptPath>\
-            <lightweight>true</lightweight>\
-          </definition>\
-          <disabled>false</disabled>\
-        </flow-definition>" \
-        2>/dev/null || true
-
-    sleep 5
-
-    curl -s -u "admin:$${API_TOKEN}" -X POST "http://localhost:8080/credentials/store/system/domain/_/createCredentials" \
-        --header "Content-Type: application/x-www-form-urlencoded" \
-        --data "json={\"\":\"3\",\"credentials\":{\"scope\":\"GLOBAL\",\"id\":\"ecr-repository-url\",\"secret\":\"${ecr_repository_url}\",\"description\":\"ECR Repository URL\",\"stapler-class\":\"org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl\"}}" \
-        2>/dev/null || true
-fi
+echo "MASTER_SETUP_COMPLETE"
