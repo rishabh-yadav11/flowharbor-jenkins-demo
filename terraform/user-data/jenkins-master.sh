@@ -61,7 +61,8 @@ def plugins = [
     "blueocean",
     "credentials-binding",
     "configuration-as-code",
-    "pipeline-input-step"
+    "pipeline-input-step",
+    "github"
 ]
 
 plugins.each { plugin ->
@@ -145,10 +146,7 @@ if [ -n "$API_TOKEN" ]; then
             </parameters>\
             <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>\
               <triggers>\
-                <hudson.triggers.SCMTrigger>\
-                  <spec>H/5 * * * *</spec>\
-                  <ignorePostCommitHooks>false</ignorePostCommitHooks>\
-                </hudson.triggers.SCMTrigger>\
+                <com.cloudbees.jenkins.GitHubPushTrigger/>\
               </triggers>\
             </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>\
           </properties>\
