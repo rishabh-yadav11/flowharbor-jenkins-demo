@@ -191,6 +191,7 @@ def promote(envName) {
         requiresCompatibilities: td.taskDefinition.requiresCompatibilities,
         cpu: td.taskDefinition.cpu,
         memory: td.taskDefinition.memory,
+        runtimePlatform: td.taskDefinition.runtimePlatform,
         containerDefinitions: [newContainerDef]
     ]
 

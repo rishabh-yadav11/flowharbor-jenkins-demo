@@ -41,6 +41,11 @@ resource "aws_ecs_task_definition" "dev" {
   execution_role_arn       = var.ecs_execution_role_arn
   task_role_arn            = var.ecs_task_role_arn
 
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
   container_definitions = jsonencode([
     merge(local.container_base, {
       image = "${var.ecr_repository_url}:latest"
@@ -76,6 +81,11 @@ resource "aws_ecs_task_definition" "staging" {
   execution_role_arn       = var.ecs_execution_role_arn
   task_role_arn            = var.ecs_task_role_arn
 
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
   container_definitions = jsonencode([
     merge(local.container_base, {
       image = "${var.ecr_repository_url}:latest"
@@ -110,6 +120,11 @@ resource "aws_ecs_task_definition" "prod" {
   memory                   = "512"
   execution_role_arn       = var.ecs_execution_role_arn
   task_role_arn            = var.ecs_task_role_arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
 
   container_definitions = jsonencode([
     merge(local.container_base, {
