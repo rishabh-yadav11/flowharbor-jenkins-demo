@@ -75,7 +75,7 @@ def plugins = [
     "workflow-aggregator", "git", "pipeline-aws", "docker-workflow",
     "cloudbees-folder", "blueocean", "credentials-binding",
     "configuration-as-code", "pipeline-input-step", "github",
-    "pipeline-utility-steps"
+    "pipeline-utility-steps", "dark-theme"
 ]
 plugins.each { plugin ->
     if (!pm.getPlugin(plugin)) {
