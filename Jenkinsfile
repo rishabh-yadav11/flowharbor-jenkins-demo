@@ -183,6 +183,8 @@ def promote(envName) {
         ]
     ]
 
+    def rp = td.taskDefinition.runtimePlatform ?: [cpuArchitecture: 'ARM64', operatingSystemFamily: 'LINUX']
+
     def payload = [
         family: family,
         taskRoleArn: td.taskDefinition.taskRoleArn,
@@ -191,7 +193,7 @@ def promote(envName) {
         requiresCompatibilities: td.taskDefinition.requiresCompatibilities,
         cpu: td.taskDefinition.cpu,
         memory: td.taskDefinition.memory,
-        runtimePlatform: td.taskDefinition.runtimePlatform,
+        runtimePlatform: rp,
         containerDefinitions: [newContainerDef]
     ]
 
